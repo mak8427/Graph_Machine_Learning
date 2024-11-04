@@ -100,9 +100,9 @@ if __name__ == '__main__':
     in_features = cora_graph.num_node_features
     hidden_features = 16
     out_features = cora.num_classes
-    learning_rate = 0.01
+    learning_rate = 0.001
     weight_decay = 5e-4
-    num_epochs = 200
+    num_epochs = 400
 
     # Define GraphNetCora for Cora dataset
     class GraphNetCora(torch.nn.Module):
