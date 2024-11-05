@@ -7,11 +7,7 @@ import copy
 import time
 import random
 from tqdm import tqdm
-
-# Import AtomEncoder
 from ogb.graphproppred.mol_encoder import AtomEncoder
-
-# Import necessary libraries for plotting and visualization
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -236,8 +232,7 @@ if __name__ == '__main__':
     plt.title('Distribution of Atom Types in ZINC Training Set')
     plt.show()
 
-    # Molecule Visualization Function
-    def vis_zinc_molecule(pyg_graph):
+    def vis_zinc_molecule(pyg_graph, file_path):
         # Convert PyG graph to NetworkX graph
         nx_graph = pyg.utils.to_networkx(pyg_graph, to_undirected=True)
 
@@ -279,10 +274,11 @@ if __name__ == '__main__':
 
         plt.title('Visualization of a Molecule from ZINC Dataset')
         plt.axis('off')
-        plt.show()
+        plt.savefig(file_path)  # Save the figure to the specified file path
+        plt.close()  # Close the plot to free up memory
 
     # Visualize a sample molecule
-    vis_zinc_molecule(dataset[0])
+    vis_zinc_molecule(dataset[5], 'molecule_visualization.png')
 
     # --- End of Integration ---
 
@@ -290,7 +286,7 @@ if __name__ == '__main__':
     hidden_features = 128
     out_features = 1
     learning_rate = 0.001
-    num_epochs = 100
+    num_epochs = 70
 
     # Define OneHotEncoder
     class OneHotEncoder(torch.nn.Module):
