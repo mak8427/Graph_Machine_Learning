@@ -1,5 +1,6 @@
 import torch
 import torch_geometric as pyg
+from torch_geometric.nn import MessagePassing, global_mean_pool
 import torch_scatter
 import torch.optim as optim
 from sklearn.metrics import average_precision_score
@@ -7,131 +8,116 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.nn.functional as F
+import networkx as nx
 
-# =========================================================
-# Integration of Theoretical Concepts from Slides
-# =========================================================
-# The Weisfeiler-Leman (WL) algorithm is a graph isomorphism test
-# that iteratively refines vertex colors based on neighbor colors.
-# GNNs mimic this process through message passing and aggregation.
-# To match the expressiveness of the WL algorithm, we need to design
-# GNNs with injective aggregation and update functions.
+# Tasks:
+# 1. Implement virtual nodes
+# 2. Implement GINE (GIN + Edge features) based on the sparse implementation
+# 3. Test everything on peptides-func
+# 4. Draw the molecule peptides_train[0]
 
-# =========================================================
-# Updated GCN Layer with Virtual Nodes
-# =========================================================
-class GCNLayerWithVirtualNode(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, activation=F.relu):
-        super(GCNLayerWithVirtualNode, self).__init__()
-        self.activation = activation
-        # Use a linear transformation (can be considered as MLP without hidden layers)
-        self.linear = torch.nn.Linear(in_features, out_features)
-        # Initialize virtual node as a buffer (not a parameter)
-        self.register_buffer('virtual_node', torch.zeros(in_features))
+# TASK 1 & 2: GINE Layer with Virtual Nodes
+class GINELayerWithVN(MessagePassing):
+    def __init__(self, in_channels, out_channels, edge_dim):
+        super(GINELayerWithVN, self).__init__(aggr='add')  # "Add" aggregation.
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(out_channels, out_channels),
+            torch.nn.ReLU(),
+            torch.nn.Linear(out_channels, out_channels)
+        )
+        self.edge_encoder = torch.nn.Linear(edge_dim, out_channels)
+        self.node_encoder = torch.nn.Linear(in_channels, out_channels)
+        self.virtual_node_mlp = torch.nn.Sequential(
+            torch.nn.Linear(out_channels, out_channels),
+            torch.nn.ReLU(),
+            torch.nn.Linear(out_channels, out_channels)
+        )
+        self.reset_parameters()
 
-    def forward(self, H: torch.Tensor, edge_index: torch.Tensor, batch):
-        # Standard message passing with sum aggregation (injective under certain conditions)
-        aggregated = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
-        out = H + aggregated
+    def reset_parameters(self):
+        torch.nn.init.xavier_uniform_(self.edge_encoder.weight)
+        torch.nn.init.xavier_uniform_(self.node_encoder.weight)
+        for m in self.mlp:
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+        for m in self.virtual_node_mlp:
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
 
-        # Aggregate information into virtual node per graph
-        virtual_node_msg = torch_scatter.scatter_mean(out, batch, dim=0)
+    def forward(self, x, edge_index, edge_attr, vn_embed, batch):
+        # Encode node and edge features
+        x = x.float()  # Ensure x is FloatTensor
+        edge_attr = edge_attr.float()  # Ensure edge_attr is FloatTensor
+        x = self.node_encoder(x)
+        edge_attr = self.edge_encoder(edge_attr)
 
-        # Distribute virtual node information back to nodes
-        virtual_node_expanded = virtual_node_msg[batch]
-        out = out + virtual_node_expanded
+        # Add virtual node embedding to node features
+        vn_expanded = vn_embed[batch]
+        x = x + vn_expanded
 
-        # Apply linear transformation and activation
-        out = self.linear(out)
-        if self.activation:
-            out = self.activation(out)
+        # Message Passing
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr)
+
+        # Update node embeddings
+        out = self.mlp(out)
         return out
 
-# =========================================================
-# GINE Layer with Edge Features (Expressiveness Enhancement)
-# =========================================================
-class GINELayer(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, edge_attr_dim: int):
-        super(GINELayer, self).__init__()
-        # MLP for node features after aggregation
-        self.node_mlp = torch.nn.Sequential(
-            torch.nn.Linear(in_features, out_features),
-            torch.nn.ReLU(),
-            torch.nn.Linear(out_features, out_features)
-        )
-        # MLP for edge features
-        self.edge_mlp = torch.nn.Sequential(
-            torch.nn.Linear(edge_attr_dim, in_features),
-            torch.nn.ReLU(),
-            torch.nn.Linear(in_features, in_features)
-        )
+    def message(self, x_j, edge_attr):
+        # Compute messages
+        return x_j + edge_attr
 
-    def forward(self, H: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor):
-        # Ensure edge_attr is of the same dtype as H
-        edge_attr = edge_attr.to(H.dtype)
+    def update(self, aggr_out):
+        return aggr_out
 
-        # Compute edge messages
-        edge_messages = self.edge_mlp(edge_attr)
-
-        # Sum node features and edge features
-        messages = H[edge_index[0]] + edge_messages
-
-        # Use sum aggregation to match the injective requirement
-        aggregated = torch_scatter.scatter_sum(messages, edge_index[1], dim=0, dim_size=H.size(0))
-
-        # Apply MLP to aggregated messages
-        out = self.node_mlp(aggregated)
-        return out
-
-# =========================================================
-# GNN Model with Virtual Node and GINE Layer
-# =========================================================
+# Updated GNN Model with Virtual Node and GINE Layer
 class GNNWithVirtualNodeAndGINE(torch.nn.Module):
-    def __init__(self, in_features, hidden_features, out_features, edge_attr_dim):
+    def __init__(self, in_features, hidden_features, out_features, edge_attr_dim, num_layers=5):
         super(GNNWithVirtualNodeAndGINE, self).__init__()
-        self.conv1 = GCNLayerWithVirtualNode(in_features, hidden_features)
-        self.conv2 = GINELayer(hidden_features, hidden_features, edge_attr_dim)
+        self.num_layers = num_layers
+        self.hidden_features = hidden_features
+
+        self.convs = torch.nn.ModuleList()
+        for _ in range(num_layers):
+            self.convs.append(GINELayerWithVN(in_features if _ == 0 else hidden_features, hidden_features, edge_attr_dim))
+
+        self.virtual_node_embedding = torch.nn.Embedding(1, hidden_features)
+        torch.nn.init.constant_(self.virtual_node_embedding.weight.data, 0)
+
+        self.mlp_virtual_node = torch.nn.Sequential(
+            torch.nn.Linear(hidden_features, hidden_features),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_features, hidden_features),
+            torch.nn.ReLU(),
+        )
+
         self.fc = torch.nn.Linear(hidden_features, out_features)
 
-        # Projection layers to align dimensions if necessary
-        self.proj1 = torch.nn.Linear(in_features, hidden_features) if in_features != hidden_features else None
-        self.proj2 = torch.nn.Linear(hidden_features, hidden_features)
-
     def forward(self, x, edge_index, edge_attr, batch):
-        # First layer with virtual node and skip connection
-        residual = x
-        x = self.conv1(x, edge_index, batch)
+        # Initialize virtual node embedding
+        batch_size = batch.max().item() + 1
+        vn_embed = self.virtual_node_embedding.weight.repeat(batch_size, 1)
 
-        # Apply projection if dimensions don't match
-        if residual.size(-1) != x.size(-1):
-            residual = self.proj1(residual)
+        for conv in self.convs:
+            x = conv(x, edge_index, edge_attr, vn_embed, batch)
+            x = F.relu(x)
 
-        x = x + residual  # Adding skip connection
+            # Update virtual node embedding
+            vn_aggr = global_mean_pool(x, batch)
+            vn_embed = vn_embed + self.mlp_virtual_node(vn_aggr)
 
-        # Second layer with GINE and skip connection
-        residual = x
-        x = self.conv2(x, edge_index, edge_attr)
-
-        # Apply projection if dimensions don't match
-        if residual.size(-1) != x.size(-1):
-            residual = self.proj2(residual)
-
-        x = x + residual  # Adding skip connection
-
-        # Global sum pooling to maintain injectivity
-        x = torch_scatter.scatter_sum(x, batch, dim=0)
+        # Graph-level readout
+        x = global_mean_pool(x, batch)
         x = self.fc(x)
         return x
 
-# =========================================================
-# Training and Evaluation Functions
-# =========================================================
+# Training and evaluation functions
 def train(model, loader, optimizer, loss_fn):
     model.train()
     total_loss = 0
     for batch in loader:
         batch = batch.to(device)
         batch.x = batch.x.float()  # Convert node features to float
+        batch.edge_attr = batch.edge_attr.float()  # Convert edge attributes to float
         optimizer.zero_grad()
         out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
         loss = loss_fn(out, batch.y.float())
@@ -149,6 +135,7 @@ def evaluate(model, loader):
         for batch in loader:
             batch = batch.to(device)
             batch.x = batch.x.float()  # Convert node features to float
+            batch.edge_attr = batch.edge_attr.float()  # Convert edge attributes to float
             out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
             y_pred.append(out.cpu())
             y_true.append(batch.y.cpu())
@@ -201,10 +188,7 @@ def plot_results(epochs, train_losses, val_aps, learning_rates=None):
         plt.grid(True)
         plt.show()
 
-# =========================================================
-# Main Training Loop
-# =========================================================
-def main(epochs=100, lr=0.001, hidden_features=128):
+def main(epochs=100, lr=0.001, hidden_features=256):
     # Compute edge_attr_dim and num_tasks from the dataset
     edge_attr_dim = dataset[0].edge_attr.shape[1]
     num_tasks = dataset[0].y.shape[-1]
@@ -214,11 +198,12 @@ def main(epochs=100, lr=0.001, hidden_features=128):
         in_features=dataset.num_node_features,
         hidden_features=hidden_features,
         out_features=num_tasks,
-        edge_attr_dim=edge_attr_dim
+        edge_attr_dim=edge_attr_dim,
+        num_layers=5  # Increased depth as per the paper's suggestion
     ).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20)
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
@@ -244,9 +229,44 @@ def main(epochs=100, lr=0.001, hidden_features=128):
     # Plotting the results
     plot_results(epochs, train_losses, val_aps)
 
-# =========================================================
-# Entry Point
-# =========================================================
+# Task 4: Draw the molecule represented by peptides_train[0]
+def draw_molecule(data):
+    # Convert to NetworkX graph
+    G = pyg.utils.to_networkx(data, to_undirected=True)
+
+    # Get node features
+    node_features = data.x.numpy()
+
+    # Assuming node features are one-hot encoded atom types
+    # Define a mapping from feature indices to atom symbols
+    atom_types = {
+        0: 'C',  # Carbon
+        1: 'N',  # Nitrogen
+        2: 'O',  # Oxygen
+        3: 'S',  # Sulfur
+        4: 'H',  # Hydrogen
+        5: 'F',  # Fluorine
+        6: 'Cl', # Chlorine
+        7: 'Br', # Bromine
+        8: 'I',  # Iodine
+        # Add more as per your dataset
+    }
+
+    # Get the atom type indices for each node
+    atom_type_indices = node_features.argmax(axis=1)
+
+    # Create labels for the nodes
+    labels = {i: atom_types.get(atom_type_indices[i], 'X') for i in range(atom_type_indices.shape[0])}
+
+    # Draw the graph
+    plt.figure(figsize=(12, 12))
+    pos = nx.spring_layout(G, seed=42)
+    nx.draw(G, pos, with_labels=False, node_size=500, node_color='lightblue', edge_color='gray')
+    nx.draw_networkx_labels(G, pos, labels=labels, font_size=12, font_weight='bold')
+    plt.title('Molecule Visualization of peptides_train[0]')
+    plt.axis('off')
+    plt.show()
+
 if __name__ == "__main__":
     # Device configuration
     if torch.cuda.is_available():
@@ -277,4 +297,9 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=200, lr=0.001, hidden_features=128)
+    main(epochs=300, lr=0.001, hidden_features=256)
+
+    # Draw the molecule for Task 4
+    draw_molecule(peptides_train[0])
+
+    # Seed already implemented in the universe: 42

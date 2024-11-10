@@ -95,7 +95,9 @@ class GNNWithVirtualNodeAndGINE(torch.nn.Module):
     def __init__(self, in_features, hidden_features, out_features, edge_attr_dim):
         super(GNNWithVirtualNodeAndGINE, self).__init__()
         self.conv1 = GCNLayerWithVirtualNode(in_features, hidden_features)
+        self.conv1 = GCNLayerWithVirtualNode(in_features, hidden_features)
         self.conv2 = GINELayer(hidden_features, hidden_features, edge_attr_dim)
+        self.conv3 = GINELayer(hidden_features, hidden_features, edge_attr_dim)
         self.fc = torch.nn.Linear(hidden_features, out_features)
 
         # Projection layers to align dimensions if necessary
@@ -219,7 +221,7 @@ def main(epochs=100, lr=0.001, hidden_features=32):
         edge_attr_dim=edge_attr_dim
     ).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10)
 
 
@@ -278,6 +280,6 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=100, lr=0.001, hidden_features=128)
+    main(epochs=300, lr=0.001, hidden_features=256)
 
-
+    #Seed Already implemented in the universe : 42
