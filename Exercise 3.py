@@ -1,65 +1,34 @@
 import torch
 import torch_geometric as pyg
-import ogb.graphproppred
-import ogb.graphproppred.mol_encoder
-from tqdm import tqdm
 import torch_scatter
-import sklearn
+import torch.optim as optim
+from sklearn.metrics import average_precision_score
+import numpy as np
 
-if torch.cuda.is_available(): # NVIDIA
-    device = torch.device('cuda')
-elif torch.backends.mps.is_available(): # apple M1/M2
-    device = torch.device('mps')
-else:
-    device = torch.device('cpu')
-device
+# Tasks:
+# 1. Implement virtual nodes
+# 2. Implement GINE (GIN + Edge features) based on the sparse implementation
+# 3. Test everything on peptides-func
+# 4. Draw the molecule peptides_train[0] (Not included in this code)
 
-# Loaders for the dataset
-
-dataset = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func")
-peptides_train = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="train")
-peptides_val   = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="val")
-peptides_test  = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="test")
-
-batch_size = 32
-train_loader = pyg.loader.DataLoader(peptides_train, batch_size = batch_size, shuffle = True)
-val_loader = pyg.loader.DataLoader(peptides_val, batch_size = batch_size, shuffle = True)
-test_loader = pyg.loader.DataLoader(peptides_test, batch_size = batch_size, shuffle = True)
-
-
-
-
-
-### Tasks:
-
-
-### 1. Implement virtual nodes
-### 2. Implement GINE (GIN+Edge features) based on the sparse implementation from Exercise 2
-### 3. Test everything (especially the effects of virtual nodes and edge features) on peptides-func.
-### 4. Draw the molecule peptides_train[0]
-
-
-
-
-#Layers for the GCN
-#Standard GCN Layer
-class GCNLayer(torch.nn.Module):  #Standard GCN Layer
+# Standard GCN Layer
+class GCNLayer(torch.nn.Module):
     def __init__(self, in_features: int, out_features: int, activation=torch.nn.functional.relu):
         super(GCNLayer, self).__init__()
         self.activation = activation
-        self.W: torch.Tensor = torch.nn.Parameter(torch.zeros(in_features, out_features))
+        self.W = torch.nn.Parameter(torch.zeros(in_features, out_features))
         torch.nn.init.kaiming_normal_(self.W)
 
     def forward(self, H: torch.Tensor, edge_index: torch.Tensor):
-        out = H.clone()
-        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=out.shape[0])
+        out = H
+        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
         out = out + new_H
         out = out.matmul(self.W)
         if self.activation:
             out = self.activation(out)
         return out
 
-#GCN Layer with Edge Features
+# TASK 1: GCN Layer with Virtual Nodes
 class GCNLayerWithVirtualNode(torch.nn.Module):
     def __init__(self, in_features: int, out_features: int, activation=torch.nn.functional.relu):
         super(GCNLayerWithVirtualNode, self).__init__()
@@ -67,29 +36,166 @@ class GCNLayerWithVirtualNode(torch.nn.Module):
         self.W = torch.nn.Parameter(torch.zeros(in_features, out_features))
         torch.nn.init.kaiming_normal_(self.W)
 
-        # Virtual node parameter
-        self.virtual_node = torch.nn.Parameter(torch.zeros(1, in_features))
-        torch.nn.init.zeros_(self.virtual_node)  # Initialize virtual node to zeros
+        # Initialize virtual node as a buffer (not a parameter)
+        self.register_buffer('virtual_node', torch.zeros(in_features))
 
-    def forward(self, H: torch.Tensor, edge_index: torch.Tensor):
-        # Step 1: Standard message passing with GCN
-        out = H.clone()
-        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=out.shape[0])
+    def forward(self, H: torch.Tensor, edge_index: torch.Tensor, batch):
+        # Standard message passing
+        out = H
+        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
         out = out + new_H
 
-        # Step 2: Aggregate information into virtual node
-        virtual_node_msg = torch.mean(out, dim=0, keepdim=True)  # Aggregate mean of all nodes
-        self.virtual_node = self.virtual_node + virtual_node_msg  # Update virtual node features
+        # Aggregate information into virtual node per graph
+        virtual_node_msg = torch_scatter.scatter_mean(out, batch, dim=0)
 
-        # Step 3: Distribute virtual node information back to all nodes
-        out = out + self.virtual_node
+        # Distribute virtual node information back to nodes
+        virtual_node_expanded = virtual_node_msg[batch]
+        out = out + virtual_node_expanded
 
-        # Step 4: Apply transformation and activation
+        # Apply transformation and activation
         out = out.matmul(self.W)
         if self.activation:
             out = self.activation(out)
         return out
 
+# TASK 2: GINE Layer with Edge Features
+class GINELayer(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int, edge_attr_dim: int):
+        super(GINELayer, self).__init__()
+        # MLP for node features after aggregation
+        self.node_mlp = torch.nn.Sequential(
+            torch.nn.Linear(in_features, out_features),
+            torch.nn.ReLU(),
+            torch.nn.Linear(out_features, out_features)
+        )
+        # MLP for edge features
+        self.edge_mlp = torch.nn.Linear(edge_attr_dim, in_features)
+
+    def forward(self, H: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor):
+        # Ensure edge_attr is of the same dtype as H
+        edge_attr = edge_attr.to(H.dtype)
+
+        # Compute edge messages
+        edge_messages = self.edge_mlp(edge_attr)
+
+        # Sum node features and edge features
+        messages = H[edge_index[0]] + edge_messages
+        aggregated = torch_scatter.scatter_add(messages, edge_index[1], dim=0, dim_size=H.size(0))
+
+        # Apply MLP to aggregated messages
+        out = self.node_mlp(aggregated)
+        return out
+
+# Updated GNN Model with Virtual Node and GINE Layer
+class GNNWithVirtualNodeAndGINE(torch.nn.Module):
+    def __init__(self, in_features, hidden_features, out_features, edge_attr_dim):
+        super(GNNWithVirtualNodeAndGINE, self).__init__()
+        self.conv1 = GCNLayerWithVirtualNode(in_features, hidden_features)
+        self.conv2 = GINELayer(hidden_features, hidden_features, edge_attr_dim)
+        self.fc = torch.nn.Linear(hidden_features, out_features)
+
+    def forward(self, x, edge_index, edge_attr, batch):
+        x = self.conv1(x, edge_index, batch)
+        x = self.conv2(x, edge_index, edge_attr)
+        x = torch_scatter.scatter_mean(x, batch, dim=0)
+        x = self.fc(x)
+        return x
+
+# Training and evaluation functions
+def train(model, loader, optimizer, loss_fn):
+    model.train()
+    total_loss = 0
+    for batch in loader:
+        batch = batch.to(device)
+        batch.x = batch.x.float()  # Convert node features to float
+        optimizer.zero_grad()
+        out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+        loss = loss_fn(out, batch.y.float())
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    average_loss = total_loss / len(loader)
+    return average_loss
+
+def evaluate(model, loader):
+    model.eval()
+    y_true = []
+    y_pred = []
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            batch.x = batch.x.float()  # Convert node features to float
+            out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+            y_pred.append(out.cpu())
+            y_true.append(batch.y.cpu())
+    y_true = torch.cat(y_true, dim=0).numpy()
+    y_pred = torch.cat(y_pred, dim=0).numpy()
+    # Compute per-class AP
+    ap_per_class = []
+    for i in range(y_true.shape[1]):
+        try:
+            ap = average_precision_score(y_true[:, i], y_pred[:, i])
+        except ValueError:
+            ap = 0.0  # Handle cases where a class has no positive samples
+        ap_per_class.append(ap)
+    mean_ap = np.mean(ap_per_class)
+    return mean_ap
 
 
+def main(epochs=30, lr=0.001, hidden_features=32):
+    # Compute edge_attr_dim and num_tasks from the dataset
+    edge_attr_dim = dataset[0].edge_attr.shape[1]
+    num_tasks = dataset[0].y.shape[-1]
 
+    # Initialize the model, optimizer, and loss function
+    model = GNNWithVirtualNodeAndGINE(
+        in_features=dataset.num_node_features,
+        hidden_features=hidden_features,
+        out_features=num_tasks,
+        edge_attr_dim=edge_attr_dim
+    ).to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    loss_fn = torch.nn.BCEWithLogitsLoss()
+
+    # Training and evaluation loop
+    for epoch in range(epochs):
+        train_loss = train(model, train_loader, optimizer, loss_fn)
+        val_ap = evaluate(model, val_loader)
+        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {train_loss:.4f}, Validation AP Score: {val_ap:.4f}")
+
+    # Final test evaluation
+    test_ap = evaluate(model, test_loader)
+    print(f"Test AP Score: {test_ap:.4f}")
+
+if __name__ == "__main__":
+    # Device configuration
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+    print(f'Using device: {device}')
+
+    # Load dataset and create data loaders
+    dataset = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func")
+    peptides_train = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="train")
+    peptides_val = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="val")
+    peptides_test = pyg.datasets.LRGBDataset(root='dataset/peptides-func', name="Peptides-func", split="test")
+
+    batch_size = 32
+    train_loader = pyg.loader.DataLoader(peptides_train, batch_size=batch_size, shuffle=True)
+    val_loader = pyg.loader.DataLoader(peptides_val, batch_size=batch_size, shuffle=False)
+    test_loader = pyg.loader.DataLoader(peptides_test, batch_size=batch_size, shuffle=False)
+
+    # Check number of classes and label distribution
+    num_classes = dataset[0].y.shape[-1]
+    print(f"Number of classes: {num_classes}")
+
+    all_labels = np.concatenate([data.y.numpy() for data in dataset], axis=0)
+    label_distribution = np.mean(all_labels, axis=0)
+    print(f"Label distribution: {label_distribution}")
+
+    # Run the main training loop
+    main(epochs=100, lr=0.001, hidden_features=64)
