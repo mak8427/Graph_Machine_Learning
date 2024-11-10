@@ -199,11 +199,11 @@ def main(epochs=100, lr=0.001, hidden_features=256):
         hidden_features=hidden_features,
         out_features=num_tasks,
         edge_attr_dim=edge_attr_dim,
-        num_layers=5  # Increased depth as per the paper's suggestion
+        num_layers=8  # Increased depth as per the paper's suggestion
     ).to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.9, patience=10)
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
@@ -237,32 +237,38 @@ def draw_molecule(data):
     # Get node features
     node_features = data.x.numpy()
 
-    # Assuming node features are one-hot encoded atom types
     # Define a mapping from feature indices to atom symbols
     atom_types = {
-        0: 'C',  # Carbon
-        1: 'N',  # Nitrogen
-        2: 'O',  # Oxygen
-        3: 'S',  # Sulfur
-        4: 'H',  # Hydrogen
-        5: 'F',  # Fluorine
-        6: 'Cl', # Chlorine
-        7: 'Br', # Bromine
-        8: 'I',  # Iodine
-        # Add more as per your dataset
+        5: 'C',  # Carbon
+        7: 'N',  # Nitrogen
+        6: 'O',  # Oxygen
+        # Update this mapping based on your dataset
     }
 
     # Get the atom type indices for each node
-    atom_type_indices = node_features.argmax(axis=1)
+    atom_type_indices = node_features[:, 0].astype(int)
 
     # Create labels for the nodes
     labels = {i: atom_types.get(atom_type_indices[i], 'X') for i in range(atom_type_indices.shape[0])}
 
     # Draw the graph
     plt.figure(figsize=(12, 12))
-    pos = nx.spring_layout(G, seed=42)
-    nx.draw(G, pos, with_labels=False, node_size=500, node_color='lightblue', edge_color='gray')
-    nx.draw_networkx_labels(G, pos, labels=labels, font_size=12, font_weight='bold')
+    pos = nx.kamada_kawai_layout(G)
+
+    nx.draw(
+        G, pos,
+        with_labels=False,
+        node_size=50,  # Reduced node size to make nodes even smaller
+        node_color='lightblue',
+        edge_color='gray',
+        width=0.5  # Adjusted edge width for smaller nodes
+    )
+    nx.draw_networkx_labels(
+        G, pos,
+        labels=labels,
+        font_size=6,  # Reduced font size to fit smaller nodes
+        font_weight='bold'
+    )
     plt.title('Molecule Visualization of peptides_train[0]')
     plt.axis('off')
     plt.show()
@@ -297,7 +303,7 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=300, lr=0.001, hidden_features=256)
+    main(epochs=150, lr=0.001, hidden_features=128)
 
     # Draw the molecule for Task 4
     draw_molecule(peptides_train[0])
