@@ -6,46 +6,33 @@ from sklearn.metrics import average_precision_score
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.nn.functional as F
 
-# Tasks:
-# 1. Implement virtual nodes
-# 2. Implement GINE (GIN + Edge features) based on the sparse implementation
-# 3. Test everything on peptides-func
-# 4. Draw the molecule peptides_train[0] (Not included in this code)
+# =========================================================
+# Integration of Theoretical Concepts from Slides
+# =========================================================
+# The Weisfeiler-Leman (WL) algorithm is a graph isomorphism test
+# that iteratively refines vertex colors based on neighbor colors.
+# GNNs mimic this process through message passing and aggregation.
+# To match the expressiveness of the WL algorithm, we need to design
+# GNNs with injective aggregation and update functions.
 
-# Standard GCN Layer
-class GCNLayer(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, activation=torch.nn.functional.relu):
-        super(GCNLayer, self).__init__()
-        self.activation = activation
-        self.W = torch.nn.Parameter(torch.zeros(in_features, out_features))
-        torch.nn.init.kaiming_normal_(self.W)
-
-    def forward(self, H: torch.Tensor, edge_index: torch.Tensor):
-        out = H
-        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
-        out = out + new_H
-        out = out.matmul(self.W)
-        if self.activation:
-            out = self.activation(out)
-        return out
-
-# TASK 1: GCN Layer with Virtual Nodes
+# =========================================================
+# Updated GCN Layer with Virtual Nodes
+# =========================================================
 class GCNLayerWithVirtualNode(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, activation=torch.nn.functional.relu):
+    def __init__(self, in_features: int, out_features: int, activation=F.relu):
         super(GCNLayerWithVirtualNode, self).__init__()
         self.activation = activation
-        self.W = torch.nn.Parameter(torch.zeros(in_features, out_features))
-        torch.nn.init.kaiming_normal_(self.W)
-
+        # Use a linear transformation (can be considered as MLP without hidden layers)
+        self.linear = torch.nn.Linear(in_features, out_features)
         # Initialize virtual node as a buffer (not a parameter)
         self.register_buffer('virtual_node', torch.zeros(in_features))
 
     def forward(self, H: torch.Tensor, edge_index: torch.Tensor, batch):
-        # Standard message passing
-        out = H
-        new_H = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
-        out = out + new_H
+        # Standard message passing with sum aggregation (injective under certain conditions)
+        aggregated = torch_scatter.scatter_add(H[edge_index[0]], edge_index[1], dim=0, dim_size=H.size(0))
+        out = H + aggregated
 
         # Aggregate information into virtual node per graph
         virtual_node_msg = torch_scatter.scatter_mean(out, batch, dim=0)
@@ -54,13 +41,15 @@ class GCNLayerWithVirtualNode(torch.nn.Module):
         virtual_node_expanded = virtual_node_msg[batch]
         out = out + virtual_node_expanded
 
-        # Apply transformation and activation
-        out = out.matmul(self.W)
+        # Apply linear transformation and activation
+        out = self.linear(out)
         if self.activation:
             out = self.activation(out)
         return out
 
-# TASK 2: GINE Layer with Edge Features
+# =========================================================
+# GINE Layer with Edge Features (Expressiveness Enhancement)
+# =========================================================
 class GINELayer(torch.nn.Module):
     def __init__(self, in_features: int, out_features: int, edge_attr_dim: int):
         super(GINELayer, self).__init__()
@@ -71,7 +60,11 @@ class GINELayer(torch.nn.Module):
             torch.nn.Linear(out_features, out_features)
         )
         # MLP for edge features
-        self.edge_mlp = torch.nn.Linear(edge_attr_dim, in_features)
+        self.edge_mlp = torch.nn.Sequential(
+            torch.nn.Linear(edge_attr_dim, in_features),
+            torch.nn.ReLU(),
+            torch.nn.Linear(in_features, in_features)
+        )
 
     def forward(self, H: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor):
         # Ensure edge_attr is of the same dtype as H
@@ -82,15 +75,17 @@ class GINELayer(torch.nn.Module):
 
         # Sum node features and edge features
         messages = H[edge_index[0]] + edge_messages
-        aggregated = torch_scatter.scatter_add(messages, edge_index[1], dim=0, dim_size=H.size(0))
+
+        # Use sum aggregation to match the injective requirement
+        aggregated = torch_scatter.scatter_sum(messages, edge_index[1], dim=0, dim_size=H.size(0))
 
         # Apply MLP to aggregated messages
         out = self.node_mlp(aggregated)
         return out
 
-# Updated GNN Model with Virtual Node and GINE Layer
-import torch.nn.functional as F
-
+# =========================================================
+# GNN Model with Virtual Node and GINE Layer
+# =========================================================
 class GNNWithVirtualNodeAndGINE(torch.nn.Module):
     def __init__(self, in_features, hidden_features, out_features, edge_attr_dim):
         super(GNNWithVirtualNodeAndGINE, self).__init__()
@@ -123,12 +118,14 @@ class GNNWithVirtualNodeAndGINE(torch.nn.Module):
 
         x = x + residual  # Adding skip connection
 
-        # Global pooling and final output layer
-        x = torch_scatter.scatter_mean(x, batch, dim=0)
+        # Global sum pooling to maintain injectivity
+        x = torch_scatter.scatter_sum(x, batch, dim=0)
         x = self.fc(x)
         return x
 
-# Training and evaluation functions
+# =========================================================
+# Training and Evaluation Functions
+# =========================================================
 def train(model, loader, optimizer, loss_fn):
     model.train()
     total_loss = 0
@@ -168,7 +165,6 @@ def evaluate(model, loader):
     mean_ap = np.mean(ap_per_class)
     return mean_ap
 
-
 def plot_results(epochs, train_losses, val_aps, learning_rates=None):
     epochs_range = range(1, epochs + 1)
 
@@ -205,8 +201,10 @@ def plot_results(epochs, train_losses, val_aps, learning_rates=None):
         plt.grid(True)
         plt.show()
 
-
-def main(epochs=100, lr=0.001, hidden_features=32):
+# =========================================================
+# Main Training Loop
+# =========================================================
+def main(epochs=100, lr=0.001, hidden_features=128):
     # Compute edge_attr_dim and num_tasks from the dataset
     edge_attr_dim = dataset[0].edge_attr.shape[1]
     num_tasks = dataset[0].y.shape[-1]
@@ -221,7 +219,6 @@ def main(epochs=100, lr=0.001, hidden_features=32):
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10)
-
 
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
@@ -240,7 +237,6 @@ def main(epochs=100, lr=0.001, hidden_features=32):
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {train_loss:.4f}, Validation AP Score: {val_ap:.4f}, Learning Rate: {current_lr:.6f}")
         scheduler.step(val_ap)
 
-
     # Final test evaluation
     test_ap = evaluate(model, test_loader)
     print(f"Test AP Score: {test_ap:.4f}")
@@ -248,6 +244,9 @@ def main(epochs=100, lr=0.001, hidden_features=32):
     # Plotting the results
     plot_results(epochs, train_losses, val_aps)
 
+# =========================================================
+# Entry Point
+# =========================================================
 if __name__ == "__main__":
     # Device configuration
     if torch.cuda.is_available():
@@ -278,6 +277,4 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=100, lr=0.001, hidden_features=128)
-
-
+    main(epochs=200, lr=0.001, hidden_features=128)

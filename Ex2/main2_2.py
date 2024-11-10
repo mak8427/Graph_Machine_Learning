@@ -389,7 +389,7 @@ if __name__ == '__main__':
         print(f'[{model_name}] Test Loss on ZINC dataset: {test_loss:.4f}')
 
     # Training AtomEncoder model
-    print("\nStarting training on ZINC dataset with AtomEncoder...")
+    print("\nStarting training on ZINC dataset witMh AtomEncoder...")
     train_and_evaluate(model_atomencoder, optimizer_atomencoder, train_loader, val_loader, num_epochs, model_name="AtomEncoder")
     print("Finished training on ZINC dataset with AtomEncoder.")
 
