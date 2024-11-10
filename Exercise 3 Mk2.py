@@ -199,7 +199,7 @@ def main(epochs=100, lr=0.001, hidden_features=256):
         hidden_features=hidden_features,
         out_features=num_tasks,
         edge_attr_dim=edge_attr_dim,
-        num_layers=8  # Increased depth as per the paper's suggestion
+        num_layers=5  # Increased depth as per the paper's suggestion
     ).to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
@@ -266,11 +266,12 @@ def draw_molecule(data):
     nx.draw_networkx_labels(
         G, pos,
         labels=labels,
-        font_size=6,  # Reduced font size to fit smaller nodes
+        font_size=4,  # Reduced font size to fit smaller nodes
         font_weight='bold'
     )
     plt.title('Molecule Visualization of peptides_train[0]')
     plt.axis('off')
+    plt.savefig('Molecule_Visualization.png')
     plt.show()
 
 if __name__ == "__main__":
@@ -303,9 +304,11 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=150, lr=0.001, hidden_features=128)
+    main(epochs=200, lr=0.001, hidden_features=128)
 
     # Draw the molecule for Task 4
     draw_molecule(peptides_train[0])
 
     # Seed already implemented in the universe: 42
+
+#%%

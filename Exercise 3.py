@@ -205,6 +205,7 @@ def plot_results(epochs, train_losses, val_aps, learning_rates=None):
         plt.title('Learning Rate over Epochs')
         plt.legend()
         plt.grid(True)
+        plt.savefig('Learning_Rate.png')
         plt.show()
 
 
