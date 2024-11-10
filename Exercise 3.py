@@ -4,6 +4,8 @@ import torch_scatter
 import torch.optim as optim
 from sklearn.metrics import average_precision_score
 import numpy as np
+import matplotlib.pyplot as plt
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # Tasks:
 # 1. Implement virtual nodes
@@ -142,7 +144,44 @@ def evaluate(model, loader):
     return mean_ap
 
 
-def main(epochs=30, lr=0.001, hidden_features=32):
+def plot_results(epochs, train_losses, val_aps, learning_rates=None):
+    epochs_range = range(1, epochs + 1)
+
+    # Plot Training Loss
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs_range, train_losses, label='Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Loss over Epochs')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('Training_Loss.png')
+    plt.show()
+
+    # Plot Validation AP Score
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs_range, val_aps, label='Validation AP Score', color='orange')
+    plt.xlabel('Epoch')
+    plt.ylabel('Average Precision Score')
+    plt.title('Validation AP Score over Epochs')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('Validation_AP_Score.png')
+    plt.show()
+
+    # Plot Learning Rate if provided
+    if learning_rates is not None:
+        plt.figure(figsize=(10, 5))
+        plt.plot(epochs_range, learning_rates, label='Learning Rate', color='green')
+        plt.xlabel('Epoch')
+        plt.ylabel('Learning Rate')
+        plt.title('Learning Rate over Epochs')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+
+def main(epochs=100, lr=0.001, hidden_features=32):
     # Compute edge_attr_dim and num_tasks from the dataset
     edge_attr_dim = dataset[0].edge_attr.shape[1]
     num_tasks = dataset[0].y.shape[-1]
@@ -156,17 +195,33 @@ def main(epochs=30, lr=0.001, hidden_features=32):
     ).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10)
+
+
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
-    # Training and evaluation loop
+    # Lists to store losses and AP scores
+    train_losses = []
+    val_aps = []
+    learning_rates = []
+
     for epoch in range(epochs):
         train_loss = train(model, train_loader, optimizer, loss_fn)
         val_ap = evaluate(model, val_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {train_loss:.4f}, Validation AP Score: {val_ap:.4f}")
+        train_losses.append(train_loss)
+        val_aps.append(val_ap)
+        current_lr = optimizer.param_groups[0]['lr']
+        learning_rates.append(current_lr)
+        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {train_loss:.4f}, Validation AP Score: {val_ap:.4f}, Learning Rate: {current_lr:.6f}")
+        scheduler.step(val_ap)
+
 
     # Final test evaluation
     test_ap = evaluate(model, test_loader)
     print(f"Test AP Score: {test_ap:.4f}")
+
+    # Plotting the results
+    plot_results(epochs, train_losses, val_aps)
 
 if __name__ == "__main__":
     # Device configuration
@@ -198,4 +253,6 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=100, lr=0.001, hidden_features=64)
+    main(epochs=200, lr=0.001, hidden_features=64)
+
+
