@@ -186,6 +186,7 @@ def plot_results(epochs, train_losses, val_aps, learning_rates=None):
         plt.title('Learning Rate over Epochs')
         plt.legend()
         plt.grid(True)
+        plt.savefig('Learning_Rate.png')
         plt.show()
 
 def main(epochs=100, lr=0.001, hidden_features=256):
@@ -230,43 +231,57 @@ def main(epochs=100, lr=0.001, hidden_features=256):
     plot_results(epochs, train_losses, val_aps)
 
 # Task 4: Draw the molecule represented by peptides_train[0]
-def draw_molecule(data):
-    # Convert to NetworkX graph
+def draw_molecule(data, def_col=0):
     G = pyg.utils.to_networkx(data, to_undirected=True)
-
-    # Get node features
     node_features = data.x.numpy()
-
-    # Define a mapping from feature indices to atom symbols
-    atom_types = {
-        5: 'C',  # Carbon
-        7: 'N',  # Nitrogen
-        6: 'O',  # Oxygen
-        # Update this mapping based on your dataset
+    edge_index = data.edge_index.numpy()
+    edge_attr = data.edge_attr.numpy()
+    bond_types = edge_attr[:, 0].astype(int)
+    atom_types = None
+    atom_type_indices = None
+    for i, (u, v) in enumerate(zip(edge_index[0], edge_index[1])):
+        G.edges[u, v]['bond_type'] = bond_types[i]
+    if def_col == 0:
+        atom_types = {
+            5: 'C',
+            6: 'N',
+            7: 'O',
+        }
+        atom_type_indices = node_features[:, def_col].astype(int)
+    elif def_col == 2:
+        atom_types = {4: 'C', 3: 'O', 1: 'N'}
+        atom_type_indices = node_features[:, def_col].astype(int)
+    elif def_col == 4:
+        atom_types = {1: 'C', 0: 'O', 2: 'N'}
+        atom_type_indices = node_features[:, def_col].astype(int)
+    bond_color_mapping = {
+        0: 'black',
+        1: 'blue',
+        3: 'red',
     }
-
-    # Get the atom type indices for each node
-    atom_type_indices = node_features[:, 0].astype(int)
-
-    # Create labels for the nodes
+    edges = list(G.edges())
+    edge_colors = []
+    for u, v in edges:
+        bond_type = G.edges[u, v]['bond_type']
+        color = bond_color_mapping.get(bond_type, 'green')
+        edge_colors.append(color)
     labels = {i: atom_types.get(atom_type_indices[i], 'X') for i in range(atom_type_indices.shape[0])}
-
-    # Draw the graph
-    plt.figure(figsize=(12, 12))
-    pos = nx.kamada_kawai_layout(G)
-
+    size=12
+    plt.figure(figsize=(size, size))
+    pos = nx.kamada_kawai_layout(G, scale=5)
     nx.draw(
         G, pos,
         with_labels=False,
-        node_size=50,  # Reduced node size to make nodes even smaller
+        node_size=50,
         node_color='lightblue',
-        edge_color='gray',
-        width=0.5  # Adjusted edge width for smaller nodes
+        edgelist=edges,
+        edge_color=edge_colors,
+        width=1.5
     )
     nx.draw_networkx_labels(
         G, pos,
         labels=labels,
-        font_size=4,  # Reduced font size to fit smaller nodes
+        font_size=6,
         font_weight='bold'
     )
     plt.title('Molecule Visualization of peptides_train[0]')
@@ -304,7 +319,7 @@ if __name__ == "__main__":
     print(f"Label distribution: {label_distribution}")
 
     # Run the main training loop
-    main(epochs=200, lr=0.001, hidden_features=128)
+    main(epochs=300, lr=0.001, hidden_features=128)
 
     # Draw the molecule for Task 4
     draw_molecule(peptides_train[0])
