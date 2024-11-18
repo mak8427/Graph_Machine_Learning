@@ -15,10 +15,6 @@ This project implements and evaluates the **Node2Vec** algorithm for graph embed
 2. [Evaluation Results](#evaluation-results)
    - [Node Classification](#node-classification)
    - [Link Prediction](#link-prediction)
-3. [Bonus Question: Stability of Predictions](#bonus-question-stability-of-predictions)
-4. [Known Issues and Discussion](#known-issues-and-discussion)
-5. [Future Improvements](#future-improvements)
-
 ---
 
 ## Implementation Details
@@ -73,6 +69,8 @@ The overall test accuracy was **59**
 ### Link Prediction (Cora)
 
 #### Methods and Results
+![link_prediction_roc_curves.png](..%2Flink_prediction_roc_curves.png)
+
 
 | Combination Method | ROC AUC | AP Score |
 |--------------------|---------|----------|
@@ -87,11 +85,4 @@ The overall test accuracy was **59**
 - **Hadamard Product** failed to perform better than random guessing.
 
 ---
-
-## Bonus Question: Stability of Predictions
-
-The stability of predictions was not explicitly tested in this implementation. However, to evaluate stability:
-1. Train the Node2Vec embeddings and classifier using different random seeds.
-2. Measure the variance in test accuracy across different runs.
-
 
