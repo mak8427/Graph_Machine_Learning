@@ -1,255 +1,358 @@
 import torch
 import torch_geometric as pyg
-from tqdm import tqdm
-import torch_cluster
-import sklearn
 from torch_cluster import random_walk
-from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import random
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, auc
+from sklearn.metrics import classification_report, accuracy_score
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-class PQWalkDataset(Dataset):
-    def __init__(self, walks_tensor):
-        """
-        Custom dataset for PQ-walks.
+# Set random seeds for reproducibility
+def set_random_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
+class PQWalkSampler:
+    def __init__(self, edge_index, p=1, q=1):
+        """
+        Sampler for generating biased random walks using Node2Vec strategy.
         Args:
-            walks_tensor (torch.Tensor): Precomputed walks. Shape [num_walks, walk_length + 1].
+            edge_index (torch.Tensor): Edge index of the graph.
+            p (float): Return parameter.
+            q (float): In-out parameter.
         """
-        self.walks_tensor = walks_tensor
+        self.edge_index = edge_index
+        self.p = p
+        self.q = q
 
-    def __len__(self):
-        return self.walks_tensor.size(0)
-
-    def __getitem__(self, idx):
-        walk = self.walks_tensor[idx]
-        return walk
+    def sample_walks(self, start_nodes, walk_length):
+        """
+        Sample biased random walks starting from the given nodes.
+        Args:
+            start_nodes (torch.Tensor): Starting nodes for the walks.
+            walk_length (int): Length of each walk.
+        Returns:
+            torch.Tensor: Tensor of walks.
+        """
+        walks = random_walk(self.edge_index[0], self.edge_index[1], start_nodes, walk_length,
+                            p=self.p, q=self.q)
+        return walks
 
 class Node2Vec(nn.Module):
     def __init__(self, num_nodes, embedding_dim):
-        """
-        Node2Vec embedding model.
-
-        Args:
-            num_nodes (int): Total number of nodes in the graph.
-            embedding_dim (int): Dimension of the embedding space.
-        """
         super(Node2Vec, self).__init__()
         self.node_embeddings = nn.Embedding(num_nodes, embedding_dim)
 
     def forward(self, nodes):
-        # Return embeddings for given nodes
         return self.node_embeddings(nodes)
 
 def generate_negative_samples(batch_size, num_nodes, num_neg_samples):
-    """
-    Generate negative samples for Node2Vec training.
-
-    Args:
-        batch_size (int): Number of positive samples.
-        num_nodes (int): Total number of nodes.
-        num_neg_samples (int): Number of negative samples per positive sample.
-
-    Returns:
-        torch.Tensor: Negative samples of shape [batch_size, num_neg_samples].
-    """
     neg_samples = torch.randint(0, num_nodes, (batch_size, num_neg_samples))
     return neg_samples
 
 def node2vec_loss(model, pos_u, pos_v, neg_v):
-    """
-    Compute the Node2Vec loss with negative sampling.
-
-    Args:
-        model (Node2Vec): The Node2Vec model.
-        pos_u (torch.Tensor): Positive source nodes.
-        pos_v (torch.Tensor): Positive target nodes.
-        neg_v (torch.Tensor): Negative target nodes.
-
-    Returns:
-        torch.Tensor: The computed loss.
-    """
-    # Positive samples
-    u_emb = model(pos_u)  # shape [batch_size, embedding_dim]
-    v_emb = model(pos_v)  # shape [batch_size, embedding_dim]
-    pos_score = torch.mul(u_emb, v_emb).sum(dim=1)  # shape [batch_size]
+    u_emb = model(pos_u)
+    v_emb = model(pos_v)
+    pos_score = torch.mul(u_emb, v_emb).sum(dim=1)
     pos_loss = -torch.log(torch.sigmoid(pos_score) + 1e-15).mean()
 
-    # Negative samples
-    neg_emb = model(neg_v.view(-1))  # shape [batch_size * num_neg_samples, embedding_dim]
-    neg_emb = neg_emb.view(neg_v.size(0), neg_v.size(1), -1)  # [batch_size, num_neg_samples, embedding_dim]
-    u_emb_expanded = u_emb.unsqueeze(1)  # shape [batch_size, 1, embedding_dim]
-    neg_score = torch.bmm(neg_emb, u_emb_expanded.transpose(1, 2)).squeeze()  # [batch_size, num_neg_samples]
+    neg_emb = model(neg_v.view(-1))
+    neg_emb = neg_emb.view(neg_v.size(0), neg_v.size(1), -1)
+    u_emb_expanded = u_emb.unsqueeze(1)
+    neg_score = torch.bmm(neg_emb, u_emb_expanded.transpose(1, 2)).squeeze()
     neg_loss = -torch.log(torch.sigmoid(-neg_score) + 1e-15).mean()
 
     return pos_loss + neg_loss
 
+def evaluate_link_prediction(embeddings, edge_label_index, edge_label, method='dot'):
+    z = embeddings.cpu().detach().numpy()
+    src_indices = edge_label_index[0].cpu().numpy()
+    dst_indices = edge_label_index[1].cpu().numpy()
+    source_emb = z[src_indices]
+    target_emb = z[dst_indices]
+
+    if method == 'dot':
+        scores = np.sum(source_emb * target_emb, axis=1)
+        preds = (scores > 0).astype(int)
+        probs = scores  # Use raw scores as probabilities for ROC curve
+    elif method == 'hadamard':
+        scores = np.prod(source_emb * target_emb, axis=1)
+        preds = (scores > 0).astype(int)
+        probs = scores
+    elif method == 'concat':
+        features = np.hstack([source_emb, target_emb])
+        clf = LogisticRegression(max_iter=1000)
+        clf.fit(features, edge_label.cpu().numpy())
+        preds = clf.predict(features)
+        probs = clf.predict_proba(features)[:, 1]
+    elif method == 'abs_diff':
+        features = np.abs(source_emb - target_emb)
+        clf = LogisticRegression(max_iter=1000)
+        clf.fit(features, edge_label.cpu().numpy())
+        preds = clf.predict(features)
+        probs = clf.predict_proba(features)[:, 1]
+    else:
+        raise ValueError("Unknown method for combining embeddings.")
+
+    roc_auc = roc_auc_score(edge_label.cpu().numpy(), probs)
+    ap_score = average_precision_score(edge_label.cpu().numpy(), probs)
+
+    # Compute ROC curve
+    fpr, tpr, thresholds = roc_curve(edge_label.cpu().numpy(), probs)
+    roc_curve_data = (fpr, tpr)
+
+    return roc_auc, ap_score, roc_curve_data
+
 def get_accuracy(model, embeddings, y, mask):
     out = model(embeddings[mask])
     pred = out.argmax(dim=1)
-    acc = sklearn.metrics.accuracy_score(y[mask].cpu().numpy(), pred.cpu().detach().numpy())
+    acc = accuracy_score(y[mask].cpu().numpy(), pred.cpu().detach().numpy())
     return acc
 
 if __name__ == "__main__":
-    # Find device
-    if torch.cuda.is_available():  # NVIDIA
-        device = torch.device('cuda')
-        print("Using CUDA GPU")
-    elif torch.backends.mps.is_available():  # Apple M1/M2
-        device = torch.device('mps')
-        print("Using MPS GPU")
-    else:
-        device = torch.device('cpu')
-        print("Using CPU")
+    # Set random seed
+    seed = 42
+    set_random_seed(seed)
 
-    print("Loading dataset...")
+    # Find device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+
+    # Load dataset
     dataset = pyg.datasets.Planetoid(root='./dataset/cora', name='Cora')
     cora = dataset[0]
-    print("Dataset loaded.")
 
-    # Extract edge_index and nodes
-    edge_index = cora.edge_index  # shape [2, num_edges]
-    num_nodes = cora.x.size(0)  # number of nodes, e.g., 2708 for Cora
+    # Split the data for link prediction
+    link_splitter = pyg.transforms.RandomLinkSplit(is_undirected=True)
+    train_data, val_data, test_data = link_splitter(cora)
 
-    # Define parameters for random walks
-    num_walks_per_node = 10  # Number of walks per node
-    walk_length = 5  # Length of each walk
-    context_size = 2  # Context window size
-
-    print("Generating random walks...")
-    # Generate PQ-walks for each node in the graph
-    start = torch.arange(num_nodes).repeat_interleave(num_walks_per_node)
-    walks = random_walk(edge_index[0], edge_index[1], start, walk_length)
-    all_walks_tensor = walks  # Shape: [num_walks * (walk_length + 1)]
-
-    # Reshape to [num_walks, walk_length + 1]
-    all_walks_tensor = all_walks_tensor.view(-1, walk_length + 1)
-    print("Random walks generated.")
-
-    # Create the PQWalkDataset
-    walk_dataset = PQWalkDataset(all_walks_tensor)
-
-    # Define DataLoader with batch size and shuffling
-    batch_size = 64
-    train_loader = DataLoader(walk_dataset, batch_size=batch_size, shuffle=True)
+    # Use the training edge_index for embedding training
+    edge_index = train_data.edge_index.to(device)
+    num_nodes = cora.num_nodes  # Nodes remain the same
 
     # Parameters
+    num_walks_per_node = 10
+    walk_length = 5
+    context_size = 2
     embedding_dim = 128
-    num_epochs = 10
-    num_neg_samples = 5  # Negative samples per positive pair
+    num_epochs = 1
+    num_neg_samples = 5
     learning_rate = 0.01
+    p = 1  # Return parameter
+    q = 1  # In-out parameter
 
-    # Instantiate the Node2Vec model
-    embedding = Node2Vec(num_nodes=num_nodes, embedding_dim=embedding_dim).to(device)
-    optimizer = optim.Adam(embedding.parameters(), lr=learning_rate)
+    # Initialize sampler with training edges
+    sampler = PQWalkSampler(edge_index=edge_index, p=p, q=q)
 
-    print("Starting Node2Vec training...")
-    # Training loop
+    # Generate walks (fixed for the entire training process)
+    start_nodes = torch.arange(num_nodes).repeat_interleave(num_walks_per_node).to(device)
+    walks = sampler.sample_walks(start_nodes, walk_length)
+    walks = walks.view(-1, walk_length + 1)
+
+    # Create a dataset and dataloader
+    class WalkDataset(torch.utils.data.Dataset):
+        def __init__(self, walks):
+            self.walks = walks
+
+        def __len__(self):
+            return self.walks.size(0)
+
+        def __getitem__(self, idx):
+            return self.walks[idx]
+
+    walk_dataset = WalkDataset(walks)
+    walk_loader = DataLoader(walk_dataset, batch_size=128, shuffle=True)
+
+    # Initialize Node2Vec model and optimizer
+    embedding_model = Node2Vec(num_nodes=num_nodes, embedding_dim=embedding_dim).to(device)
+    optimizer = optim.Adam(embedding_model.parameters(), lr=learning_rate)
+
+    # Lists to store training loss
+    node2vec_losses = []
+
+    # Training Node2Vec with fixed walks
+    print("Training Node2Vec...")
+    embedding_model.train()
     for epoch in range(num_epochs):
         total_loss = 0
-        # Wrap the DataLoader with tqdm for a progress bar
-        with tqdm(total=len(train_loader), desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
-            for walks in train_loader:
-                walks = walks.to(device)  # [batch_size, walk_length + 1]
-                batch_size_walks, walk_length_plus_one = walks.size()
+        for batch_walks in tqdm(walk_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
+            batch_walks = batch_walks.to(device)
+            batch_loss = 0
+            # Generate positive pairs and negative samples within the batch
+            for walk in batch_walks:
+                for i in range(len(walk)):
+                    context_start = max(0, i - context_size)
+                    context_end = min(len(walk), i + context_size + 1)
 
-                # Generate positive pairs and negative samples
-                batch_loss = 0
-                for walk in walks:
-                    nodes = walk
-                    for i in range(len(nodes)):
-                        context_indices = list(range(max(0, i - context_size), i)) + \
-                                          list(range(i + 1, min(len(nodes), i + context_size + 1)))
-                        if len(context_indices) == 0:
-                            continue  # Skip if context is empty
-                        pos_v = nodes[context_indices]
-                        pos_u = nodes[i].repeat(len(pos_v))
-                        # Generate negative samples
-                        neg_v = generate_negative_samples(pos_u.size(0), num_nodes, num_neg_samples).to(device)
-                        # Compute loss
-                        loss = node2vec_loss(embedding, pos_u, pos_v, neg_v)
-                        batch_loss += loss.item()
-                        # Backpropagation
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                total_loss += batch_loss
-                pbar.update(1)
-                pbar.set_postfix({'Batch Loss': batch_loss})
-        print(f"Epoch {epoch + 1}/{num_epochs}, Total Loss: {total_loss:.4f}")
-    print("Node2Vec training completed.")
+                    # Collect context nodes
+                    pos_v_list = []
 
-    print("Visualizing Node2Vec embeddings using t-SNE...")
-    # Visualize embeddings using t-SNE
-    with torch.no_grad():
-        embeddings = embedding.node_embeddings.weight.cpu().numpy()
-        y = cora.y.cpu().numpy()
+                    # Left context
+                    if context_start < i:
+                        left_context = walk[context_start:i]
+                        if len(left_context) > 0:
+                            pos_v_list.append(left_context)
 
-        from sklearn.manifold import TSNE
-        tsne = TSNE(n_components=2, random_state=42)
-        embeddings_2d = tsne.fit_transform(embeddings)
+                    # Right context
+                    if i + 1 < context_end:
+                        right_context = walk[i+1:context_end]
+                        if len(right_context) > 0:
+                            pos_v_list.append(right_context)
 
-        plt.figure(figsize=(10, 8))
-        scatter = plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], c=y, cmap='tab10')
-        plt.legend(*scatter.legend_elements(), title="Classes")
-        plt.title('Node2Vec Embeddings Visualized with t-SNE')
-        plt.savefig('node2vec_embeddings.png')
-        plt.show()
-    print("Node2Vec embeddings visualization saved as 'node2vec_embeddings.png'.")
+                    if len(pos_v_list) == 0:
+                        continue  # No context nodes, skip
 
-    print("Starting MLP training for node classification...")
-    # Define the MLP model for node classification
-    model = torch.nn.Sequential(
+                    # Concatenate context nodes
+                    pos_v = torch.cat(pos_v_list)
+
+                    # Repeat central node to match size
+                    pos_u = walk[i].repeat(len(pos_v))
+
+                    # Generate negative samples
+                    neg_v = generate_negative_samples(len(pos_u), num_nodes, num_neg_samples).to(device)
+
+                    # Compute loss
+                    loss = node2vec_loss(embedding_model, pos_u, pos_v.to(device), neg_v)
+                    batch_loss += loss.item()
+
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+            total_loss += batch_loss
+        avg_loss = total_loss / len(walk_loader)
+        node2vec_losses.append(avg_loss)
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+    # Plot Node2Vec training loss
+    plt.figure()
+    plt.plot(range(1, num_epochs + 1), node2vec_losses, marker='o')
+    plt.title('Node2Vec Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.grid(True)
+    plt.savefig('node2vec_training_loss.png')  # Save the figure
+    plt.show()
+
+    # Node Classification on Cora
+    cora = cora.to(device)
+    print("Evaluating node classification on Cora...")
+
+    # Using the professor's code for the classifier
+    classifier_model = torch.nn.Sequential(
         torch.nn.Linear(embedding_dim, 256),  # Input layer
         torch.nn.ReLU(),
-        torch.nn.Linear(256, 128),  # Hidden layer
+        torch.nn.Linear(256, 128),            # Hidden layer 2
         torch.nn.ReLU(),
         torch.nn.Linear(128, dataset.num_classes),  # Output layer
     )
-    model = model.to(device)
+    classifier_model = classifier_model.to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)  # Define an optimizer
+    optimizer_cls = torch.optim.AdamW(classifier_model.parameters(), lr=0.01)  # Define an optimizer
     criterion = torch.nn.CrossEntropyLoss()  # Define loss function
 
-    cora = cora.to(device)
+    node2vec_embeddings = embedding_model.node_embeddings.weight.detach().to(device)
 
-    print("Training MLP model...")
-    for epoch in range(100):  # 100 epochs
-        model.train()
-        optimizer.zero_grad()
-        out = model(embedding.node_embeddings.weight[cora.train_mask])  # Forward pass
+    # Lists to store training and validation metrics
+    train_losses = []
+    val_losses = []
+    val_accuracies = []
+
+    for epoch in range(400):  # 100 epochs
+        classifier_model.train()
+        optimizer_cls.zero_grad()
+        out = classifier_model(node2vec_embeddings[cora.train_mask])  # Forward pass
         loss = criterion(out, cora.y[cora.train_mask])
         loss.backward()
-        optimizer.step()
+        optimizer_cls.step()
+
+        # Evaluate on validation set
+        classifier_model.eval()
+        with torch.no_grad():
+            val_out = classifier_model(node2vec_embeddings[cora.val_mask])
+            val_loss = criterion(val_out, cora.y[cora.val_mask])
+            val_pred = val_out.argmax(dim=1)
+            val_acc = accuracy_score(cora.y[cora.val_mask].cpu().numpy(), val_pred.cpu().numpy())
+
+        train_losses.append(loss.item())
+        val_losses.append(val_loss.item())
+        val_accuracies.append(val_acc)
 
         # Print out loss info
         if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch + 1}, Loss: {loss.item():.3e}")
-    print("MLP training completed.")
+            print(f"Epoch {epoch+1}, Train Loss: {loss.item():.3e}, Val Loss: {val_loss.item():.3e}, Val Acc: {val_acc:.4f}")
 
-    # Compute accuracy
-    print("Evaluating model performance...")
-    model.eval()
-    with torch.no_grad():
-        train_acc = get_accuracy(model, embedding.node_embeddings.weight, cora.y, cora.train_mask)
-        val_acc = get_accuracy(model, embedding.node_embeddings.weight, cora.y, cora.val_mask)
-        test_acc = get_accuracy(model, embedding.node_embeddings.weight, cora.y, cora.test_mask)
+    # Plot training and validation loss
+    epochs = range(1, 401)
+    plt.figure()
+    plt.plot(epochs, train_losses, label='Training Loss')
+    plt.plot(epochs, val_losses, label='Validation Loss')
+    plt.title('Classifier Training and Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('classifier_loss.png')  # Save the figure
+    plt.show()
+
+    # Plot validation accuracy
+    plt.figure()
+    plt.plot(epochs, val_accuracies, label='Validation Accuracy')
+    plt.title('Classifier Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('classifier_accuracy.png')  # Save the figure
+    plt.show()
+
+    # Evaluate accuracy
+    classifier_model.eval()
+    train_acc = get_accuracy(classifier_model, node2vec_embeddings, cora.y, cora.train_mask)
+    val_acc = get_accuracy(classifier_model, node2vec_embeddings, cora.y, cora.val_mask)
+    test_acc = get_accuracy(classifier_model, node2vec_embeddings, cora.y, cora.test_mask)
 
     print(f"Node classification accuracy for Cora: {test_acc:.2f} (train: {train_acc:.2f}, val: {val_acc:.2f})")
 
-    print("Visualizing MLP output embeddings using t-SNE...")
-    # Visualize the MLP output embeddings using t-SNE
-    with torch.no_grad():
-        output_embeddings = model[0](embedding.node_embeddings.weight).cpu().numpy()
-        embeddings_2d = tsne.fit_transform(output_embeddings)
+    # Detailed Classification Report
+    y_true = cora.y[cora.test_mask].cpu().numpy()
+    y_pred = classifier_model(node2vec_embeddings[cora.test_mask]).argmax(dim=1).cpu().numpy()
+    print("Classification Report:")
+    print(classification_report(y_true, y_pred, digits=4))
 
-        plt.figure(figsize=(10, 8))
-        scatter = plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], c=y, cmap='tab10')
-        plt.legend(*scatter.legend_elements(), title="Classes")
-        plt.title('MLP Output Embeddings Visualized with t-SNE')
-        plt.savefig('mlp_output_embeddings.png')
-        plt.show()
-    print("MLP output embeddings visualization saved as 'mlp_output_embeddings.png'.")
+    # Link Prediction on Cora
+    print("Evaluating link prediction on Cora...")
+    # The positive and negative edges are in "edge_label_index" with "edge_label"
+    # indicating whether an edge is a true edge or not.
+
+    # Evaluate with different combination methods
+    embeddings = node2vec_embeddings
+    methods = ['dot', 'hadamard', 'concat', 'abs_diff']
+    plt.figure()
+    for method in methods:
+        roc_auc, ap_score, roc_curve_data = evaluate_link_prediction(
+            embeddings,
+            test_data.edge_label_index,
+            test_data.edge_label,
+            method=method
+        )
+        fpr, tpr = roc_curve_data
+        plt.plot(fpr, tpr, label=f'{method} (AUC = {roc_auc:.4f})')
+        print(f"Method: {method}, ROC AUC: {roc_auc:.4f}, AP Score: {ap_score:.4f}")
+    plt.title('ROC Curves for Link Prediction Methods')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('link_prediction_roc_curves.png')  # Save the figure
+    plt.show()
+
+#%%
