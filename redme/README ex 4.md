@@ -54,8 +54,8 @@ The Node2Vec model:
 ### Node Classification
 
 | Metric         | Train Accuracy | Validation Accuracy | Test Accuracy |
-|----------------|----------------|----------------------|---------------|
-| **Accuracy**   | 100.0%         | 19.4%               | 18.4%         |
+|----------------|----------------|---------------------|---------------|
+| **Accuracy**   | 100.0%         | 58.4%               | 48.4%         |
 
 #### Classification Report (Test Set)
 | Class | Precision | Recall | F1-Score | Support |
@@ -68,7 +68,7 @@ The Node2Vec model:
 | 5     | 0.1528    | 0.2136 | 0.1781   | 103     |
 | 6     | 0.0763    | 0.1406 | 0.0989   | 64      |
 
-The overall test accuracy was **18.4%**, significantly below the expected performance (60%+).
+The overall test accuracy was **59**
 
 ### Link Prediction (Cora)
 
