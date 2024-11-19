@@ -15,6 +15,7 @@ This project implements and evaluates the **Node2Vec** algorithm for graph embed
 2. [Evaluation Results](#evaluation-results)
     - [Node Classification](#node-classification)
     - [Link Prediction](#link-prediction)
+
 ---
 
 ## Implementation Details
@@ -51,20 +52,38 @@ The Node2Vec model:
 
 | Metric       | Train Accuracy | Validation Accuracy | Test Accuracy |
 |--------------|----------------|---------------------|---------------|
-| **Accuracy** | 100.0%         | 58.4%               | 48.4%         |
+| **Accuracy** | 100.0%         | 64.7%               | 64.7%         |
 
 #### Classification Report (Test Set)
 | Class | Precision | Recall  | F1-Score | Support |
 |-------|-----------|---------|----------|---------|
-| 0     | 0.1517    | 0.2462  | 0.1877   | 130     |
-| 1     | 0.1939    | 0.2088  | 0.2011   | 91      |
-| 2     | 0.2111    | 0.1319  | 0.1624   | 144     |
-| 3     | 0.3153    | 0.2006  | 0.2452   | 319     |
-| 4     | 0.1397    | 0.1275  | 0.1333   | 149     |
-| 5     | 0.1528    | 0.2136  | 0.1781   | 103     |
-| 6     | 0.0763    | 0.1406  | 0.0989   | 64      |
+| 0     | 0.5168    | 0.5923  | 0.5520   | 130     |
+| 1     | 0.5827    | 0.8132  | 0.6789   | 91      |
+| 2     | 0.7597    | 0.8125  | 0.7852   | 144     |
+| 3     | 0.7670    | 0.4953  | 0.6019   | 319     |
+| 4     | 0.5822    | 0.5705  | 0.5763   | 149     |
+| 5     | 0.6748    | 0.8058  | 0.7345   | 103     |
+| 6     | 0.5579    | 0.8281  | 0.6667   | 64      |
 
-The overall test accuracy was **48.4%**.
+- **Macro Average**:
+    - Precision: **0.6344**
+    - Recall: **0.7025**
+    - F1-Score: **0.6565**
+- **Weighted Average**:
+    - Precision: **0.6662**
+    - Recall: **0.6470**
+    - F1-Score: **0.6428**
+
+---
+
+### Training and Validation Metrics
+Below are the training and validation loss and accuracy graphs for Node2Vec:
+
+#### Training and Validation Loss
+![Training and Validation Loss](Valdiation_loss.jpg)
+
+
+---
 
 ### Link Prediction (Cora)
 
@@ -83,3 +102,9 @@ The overall test accuracy was **48.4%**.
 - **Hadamard Product** did not perform better than random guessing, yielding a ROC AUC of **0.5000**.
 
 ---
+
+### Visualizing Link Prediction Performance
+Below is the visualization of the ROC curves for different combination methods:
+
+![Link Prediction ROC Curves](link_prediction_roc_curves.png)
+
