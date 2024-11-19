@@ -5,16 +5,16 @@ This project implements and evaluates the **Node2Vec** algorithm for graph embed
 1. Sampling **pq-walks** for nodes.
 2. Implementing the Node2Vec embedding model and its training.
 3. Evaluating the performance of the embeddings for:
-   - **Node Classification**
-   - **Link Prediction** (on both **Cora** and **PPI** datasets).
+    - **Node Classification**
+    - **Link Prediction** (on both **Cora** and **PPI** datasets).
 
 ---
 
 ## Table of Contents
 1. [Implementation Details](#implementation-details)
 2. [Evaluation Results](#evaluation-results)
-   - [Node Classification](#node-classification)
-   - [Link Prediction](#link-prediction)
+    - [Node Classification](#node-classification)
+    - [Link Prediction](#link-prediction)
 ---
 
 ## Implementation Details
@@ -35,13 +35,13 @@ The Node2Vec model:
 
 ### 4. Link Prediction
 - For link prediction, embeddings of two nodes are combined using methods such as:
-  - **Dot Product**
-  - **Hadamard Product**
-  - **Concatenation**
-  - **Absolute Difference**
+    - **Dot Product**
+    - **Hadamard Product**
+    - **Concatenation**
+    - **Absolute Difference**
 - Performance is evaluated using:
-  - **ROC AUC (Receiver Operating Characteristic - Area Under Curve)**
-  - **AP (Average Precision)**
+    - **ROC AUC (Receiver Operating Characteristic - Area Under Curve)**
+    - **AP (Average Precision)**
 
 ---
 
@@ -49,40 +49,37 @@ The Node2Vec model:
 
 ### Node Classification
 
-| Metric         | Train Accuracy | Validation Accuracy | Test Accuracy |
-|----------------|----------------|---------------------|---------------|
-| **Accuracy**   | 100.0%         | 58.4%               | 48.4%         |
+| Metric       | Train Accuracy | Validation Accuracy | Test Accuracy |
+|--------------|----------------|---------------------|---------------|
+| **Accuracy** | 100.0%         | 58.4%               | 48.4%         |
 
 #### Classification Report (Test Set)
-| Class | Precision | Recall | F1-Score | Support |
-|-------|-----------|--------|----------|---------|
-| 0     | 0.1517    | 0.2462 | 0.1877   | 130     |
-| 1     | 0.1939    | 0.2088 | 0.2011   | 91      |
-| 2     | 0.2111    | 0.1319 | 0.1624   | 144     |
-| 3     | 0.3153    | 0.2006 | 0.2452   | 319     |
-| 4     | 0.1397    | 0.1275 | 0.1333   | 149     |
-| 5     | 0.1528    | 0.2136 | 0.1781   | 103     |
-| 6     | 0.0763    | 0.1406 | 0.0989   | 64      |
+| Class | Precision | Recall  | F1-Score | Support |
+|-------|-----------|---------|----------|---------|
+| 0     | 0.1517    | 0.2462  | 0.1877   | 130     |
+| 1     | 0.1939    | 0.2088  | 0.2011   | 91      |
+| 2     | 0.2111    | 0.1319  | 0.1624   | 144     |
+| 3     | 0.3153    | 0.2006  | 0.2452   | 319     |
+| 4     | 0.1397    | 0.1275  | 0.1333   | 149     |
+| 5     | 0.1528    | 0.2136  | 0.1781   | 103     |
+| 6     | 0.0763    | 0.1406  | 0.0989   | 64      |
 
-The overall test accuracy was **59**
+The overall test accuracy was **48.4%**.
 
 ### Link Prediction (Cora)
 
 #### Methods and Results
-![link_prediction_roc_curves.png](..%2Flink_prediction_roc_curves.png)
 
-
-| Combination Method | ROC AUC | AP Score |
-|--------------------|---------|----------|
-| **Dot Product**    | 0.5856  | 0.5772   |
-| **Hadamard Product** | 0.5000  | 0.5000   |
-| **Concatenation**  | 0.7323  | 0.7113   |
-| **Absolute Difference** | 0.7005  | 0.6911   |
+| Combination Method     | ROC AUC | AP Score |
+|------------------------|---------|----------|
+| **Dot Product**        | 0.7165  | 0.7890   |
+| **Hadamard Product**   | 0.5000  | 0.5000   |
+| **Concatenation**      | 0.7550  | 0.7693   |
+| **Absolute Difference**| 0.8338  | 0.8483   |
 
 #### Observations:
-- **Concatenation** performed the best with a **ROC AUC of 0.7323** and an **AP score of 0.7113**.
-- **Dot Product** and **Absolute Difference** also provided meaningful results.
-- **Hadamard Product** failed to perform better than random guessing.
+- **Absolute Difference** performed the best with a **ROC AUC of 0.8338** and an **AP score of 0.8483**.
+- **Concatenation** and **Dot Product** also provided strong results, with ROC AUC scores of **0.7550** and **0.7165**, respectively.
+- **Hadamard Product** did not perform better than random guessing, yielding a ROC AUC of **0.5000**.
 
 ---
-
