@@ -20,26 +20,6 @@ This projects focuses on testing a graph transformer model on the Cora and the P
 
 ---
 
-## Overview
-
-This notebook covers Laplacian Positional Encodings (LapPE), SignNet integration, Random Walk Structural Embeddings (RWSE), a Pure Graph Transformer model, and experiments to compare their performance.
-
----
-
-## Prerequisites
-
-- Python 3.8+
-- PyTorch
-- PyTorch Geometric
-- NumPy
-- Matplotlib
-
-Install the required dependencies using:
-```bash
-pip install -r requirements.txt
-```
----
-
 ## Tasks Overview
 
 ### Task 1: Laplacian Positional Encodings (LapPE)
