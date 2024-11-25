@@ -1,6 +1,6 @@
 # Graph Machine Learning Tasks Notebook
 
-This notebook demonstrates the implementation and evaluation of various graph machine learning techniques. The tasks include positional encodings, structural embeddings, and a graph transformer model. Finally, the notebook evaluates the performance of LapPE and RWSE embeddings in graph neural networks.
+This projects focuses on testing a graph transformer model on the Cora and the Peptides-func datasets. We will use laplatian positional encodings and random walk structural embeddings to capture the edge distribution of the graphs.
 
 ---
 
@@ -22,7 +22,7 @@ This notebook demonstrates the implementation and evaluation of various graph ma
 
 ## Overview
 
-This notebook focuses on implementing advanced graph machine learning techniques to enhance graph representations and model performance. It covers Laplacian Positional Encodings (LapPE), SignNet integration, Random Walk Structural Embeddings (RWSE), a Pure Graph Transformer model, and experiments to compare their performance.
+This notebook covers Laplacian Positional Encodings (LapPE), SignNet integration, Random Walk Structural Embeddings (RWSE), a Pure Graph Transformer model, and experiments to compare their performance.
 
 ---
 
