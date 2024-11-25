@@ -98,22 +98,19 @@ The model achieved its best performance at epoch **50**, with following performa
 
 The results of Task 5 compare the performance of the GNN (Graph Neural Network) and Transformer-based models under different configurations. The metrics at the epoch with the highest test accuracy are summarized below:
 
-### GNN Results
-## Task 5 - GNN
+### GNN
 | Model     | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-----------|-------|--------|----------------|---------------------|---------------|
 | Baseline  | 80    | 0.0001 | 1.0000         | 0.7640              | 0.7880        |
 | LapPE     | 180   | 0.0000 | 1.0000         | 0.7700              | 0.7720        |
 | RWSE      | 160   | 0.0001 | 1.0000         | 0.7640              | 0.7950        |
 
-## Task 5 - Transformer
+### Transformer
 | Model     | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-----------|-------|--------|----------------|---------------------|---------------|
 | Baseline  | 500   | 0.0002 | 1.0000         | 0.7140              | 0.7050        |
 | LapPE     | 260   | 0.0003 | 1.0000         | 0.7220              | 0.7350        |
 
-### Best Performances
-- **GNN RWSE**: Test Accuracy = **0.7950** at epoch 160.
-- **Transformer LapPE**: Test Accuracy = **0.7380** at epoch 500.
+
 
 ---
