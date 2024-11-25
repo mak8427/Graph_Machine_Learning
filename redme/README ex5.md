@@ -1,4 +1,4 @@
-# Graph Machine Learning Tasks Notebook
+# Implementation and evaluation of Graph Transformers with different positional encodings
 
 This projects focuses on testing a graph transformer model on the Cora and the Peptides-func datasets. We will use laplatian positional encodings and random walk structural embeddings to capture the edge distribution of the graphs.
 
