@@ -81,67 +81,36 @@ This projects focuses on testing a graph transformer model on the Cora and the P
 
 ## Task 4: Model Evaluation
 
-The results of Task 4 are summarized below, showing the performance metrics across different epochs:
+The model achieved its best performance at epoch **50**, with following performance metrics:
 
 
 ### Performance Metrics Across Selected Epochs:
 
 | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-------|--------|----------------|----------------------|---------------|
-| 10    | 0.0752 | 1.0000         | 0.6780              | 0.6670        |
 | 50    | 0.0036 | 1.0000         | 0.7140              | 0.7170        |
-| 100   | 0.0018 | 1.0000         | 0.7120              | 0.7130        |
-| 200   | 0.0007 | 1.0000         | 0.7080              | 0.7080        |
-| 300   | 0.0005 | 1.0000         | 0.7040              | 0.7020        |
-| 400   | 0.0004 | 1.0000         | 0.7060              | 0.7070        |
 
-The model achieved its best performance at epoch **50**, with a validation accuracy of **0.7140** and a test accuracy of **0.7170**.
+
 
 ---
 
 ## Task 5: Model Comparison
 
-The results of Task 5 compare the performance of the GNN (Graph Neural Network) and Transformer-based models under different configurations. The metrics are summarized below:
+The results of Task 5 compare the performance of the GNN (Graph Neural Network) and Transformer-based models under different configurations. The metrics at the epoch with the highest test accuracy are summarized below:
 
-### GNN Results
-#### Baseline
-| Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
-|-------|--------|----------------|----------------------|---------------|
-| 20    | 0.0034 | 1.0000         | 0.7640              | 0.7860        |
-| 60    | 0.0001 | 1.0000         | 0.7640              | 0.7870        |
-| 200   | 0.0001 | 1.0000         | 0.7640              | 0.7860        |
-![gnn_Baseline_accuracy.png](gnn_Baseline_accuracy.png)
-#### LapPE
-| Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
-|-------|--------|----------------|----------------------|---------------|
-| 20    | 0.0038 | 1.0000         | 0.7680              | 0.7790        |
-| 60    | 0.0001 | 1.0000         | 0.7640              | 0.7800        |
-| 200   | 0.0000 | 1.0000         | 0.7680              | 0.7730        |
-![gnn_LapPE_accuracy.png](gnn_LapPE_accuracy.png)
-#### RWSE
-| Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
-|-------|--------|----------------|----------------------|---------------|
-| 20    | 0.0114 | 1.0000         | 0.7700              | 0.7940        |
-| 60    | 0.0002 | 1.0000         | 0.7620              | 0.7900        |
-| 200   | 0.0001 | 1.0000         | 0.7660              | 0.7930        |
-![gnn_RWSE_accuracy.png](gnn_RWSE_accuracy.png)
-### Transformer Results
-#### Baseline
-| Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
-|-------|--------|----------------|----------------------|---------------|
-| 20    | 0.0259 | 1.0000         | 0.6800              | 0.6720        |
-| 100   | 0.0010 | 1.0000         | 0.7040              | 0.6930        |
-| 500   | 0.0002 | 1.0000         | 0.7140              | 0.7050        |
-![transformer_Baseline_accuracy.png](transformer_Baseline_accuracy.png)
-#### LapPE
-| Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
-|-------|--------|----------------|----------------------|---------------|
-| 20    | 0.0201 | 1.0000         | 0.6980              | 0.7060        |
-| 200   | 0.0006 | 1.0000         | 0.7180              | 0.7320        |
-| 500   | 0.0001 | 1.0000         | 0.7320              | 0.7380        |
-![transformer_LapPE_accuracy.png](transformer_LapPE_accuracy.png)
-### Best Performances
-- **GNN RWSE**: Test Accuracy = **0.7950** at epoch 160.
-- **Transformer LapPE**: Test Accuracy = **0.7380** at epoch 500.
+### GNN
+| Model     | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
+|-----------|-------|--------|----------------|---------------------|---------------|
+| Baseline  | 80    | 0.0001 | 1.0000         | 0.7640              | 0.7880        |
+| LapPE     | 180   | 0.0000 | 1.0000         | 0.7700              | 0.7720        |
+| RWSE      | 160   | 0.0001 | 1.0000         | 0.7640              | 0.7950        |
+
+### Transformer
+| Model     | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
+|-----------|-------|--------|----------------|---------------------|---------------|
+| Baseline  | 500   | 0.0002 | 1.0000         | 0.7140              | 0.7050        |
+| LapPE     | 260   | 0.0003 | 1.0000         | 0.7220              | 0.7350        |
+
+
 
 ---
