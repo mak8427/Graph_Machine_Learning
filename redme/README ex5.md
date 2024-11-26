@@ -110,21 +110,21 @@ The results of Task 5 compare the performance of the GNN (Graph Neural Network) 
 | 20    | 0.0034 | 1.0000         | 0.7640              | 0.7860        |
 | 60    | 0.0001 | 1.0000         | 0.7640              | 0.7870        |
 | 200   | 0.0001 | 1.0000         | 0.7640              | 0.7860        |
-
+![gnn_Baseline_accuracy.png](gnn_Baseline_accuracy.png)
 #### LapPE
 | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-------|--------|----------------|----------------------|---------------|
 | 20    | 0.0038 | 1.0000         | 0.7680              | 0.7790        |
 | 60    | 0.0001 | 1.0000         | 0.7640              | 0.7800        |
 | 200   | 0.0000 | 1.0000         | 0.7680              | 0.7730        |
-
+![gnn_LapPE_accuracy.png](gnn_LapPE_accuracy.png)
 #### RWSE
 | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-------|--------|----------------|----------------------|---------------|
 | 20    | 0.0114 | 1.0000         | 0.7700              | 0.7940        |
 | 60    | 0.0002 | 1.0000         | 0.7620              | 0.7900        |
 | 200   | 0.0001 | 1.0000         | 0.7660              | 0.7930        |
-
+![gnn_RWSE_accuracy.png](gnn_RWSE_accuracy.png)
 ### Transformer Results
 #### Baseline
 | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
@@ -132,14 +132,14 @@ The results of Task 5 compare the performance of the GNN (Graph Neural Network) 
 | 20    | 0.0259 | 1.0000         | 0.6800              | 0.6720        |
 | 100   | 0.0010 | 1.0000         | 0.7040              | 0.6930        |
 | 500   | 0.0002 | 1.0000         | 0.7140              | 0.7050        |
-
+![transformer_Baseline_accuracy.png](transformer_Baseline_accuracy.png)
 #### LapPE
 | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-------|--------|----------------|----------------------|---------------|
 | 20    | 0.0201 | 1.0000         | 0.6980              | 0.7060        |
 | 200   | 0.0006 | 1.0000         | 0.7180              | 0.7320        |
 | 500   | 0.0001 | 1.0000         | 0.7320              | 0.7380        |
-
+![transformer_LapPE_accuracy.png](transformer_LapPE_accuracy.png)
 ### Best Performances
 - **GNN RWSE**: Test Accuracy = **0.7950** at epoch 160.
 - **Transformer LapPE**: Test Accuracy = **0.7380** at epoch 500.
