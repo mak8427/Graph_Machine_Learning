@@ -104,13 +104,16 @@ The results of Task 5 compare the performance of the GNN (Graph Neural Network) 
 | Baseline  | 80    | 0.0001 | 1.0000         | 0.7640              | 0.7880        |
 | LapPE     | 180   | 0.0000 | 1.0000         | 0.7700              | 0.7720        |
 | RWSE      | 160   | 0.0001 | 1.0000         | 0.7640              | 0.7950        |
+![gnn_Baseline_accuracy.png](gnn_Baseline_accuracy.png)
+![gnn_LapPE_accuracy.png](gnn_LapPE_accuracy.png)
+![gnn_RWSE_accuracy.png](gnn_RWSE_accuracy.png)
 
 ### Transformer
 | Model     | Epoch | Loss   | Train Accuracy | Validation Accuracy | Test Accuracy |
 |-----------|-------|--------|----------------|---------------------|---------------|
 | Baseline  | 500   | 0.0002 | 1.0000         | 0.7140              | 0.7050        |
 | LapPE     | 260   | 0.0003 | 1.0000         | 0.7220              | 0.7350        |
-
-
+![transformer_Baseline_accuracy.png](transformer_Baseline_accuracy.png)
+![transformer_LapPE_accuracy.png](transformer_LapPE_accuracy.png)
 
 ---
